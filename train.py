@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import sys
 import random
-from scipy.io import savemat
+# from scipy.io import savemat
 import shutil
 import torch.optim as optim
 from imageio import imread
@@ -302,6 +302,7 @@ class Model:
     if os.path.exists(filename):
       state = torch.load(filename)
       self.model.load_state_dict(state['net'])
+      print('Model loaded from {0}'.format(filename))
     else:
       print('Failed to load model from {0}'.format(filename))
 
@@ -314,7 +315,7 @@ def get_templates():
   templates = templates.squeeze(1)
   return templates
 
-MODEL_DIR = '/shared/rc/defake/Deepfake-Slayer/models/train/'
+MODEL_DIR = '/shared/rc/defake/Deepfake-Slayer/models/train/'#/shared/rc/defake/Deepfake-Slayer/models/train
 # MODEL_DIR = '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/train/'
 BACKBONE = 'xcp'
 MAPTYPE = 'reg'#'tmp'
@@ -349,30 +350,65 @@ if not os.path.exists(MODEL_DIR):
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
 model = MODEL.model.cuda()
-MODEL.load(16,'/shared/rc/defake/Deepfake-Slayer/models-1-16-epochs/FFDmodel')
-# state_dict = torch.load("/shared/rc/defake/Deepfake-Slayer/pretrained_weights/new_pretrainedweights.pth")
-# state_dict = torch.load("/content/gdrive/MyDrive/FFD Pretrained Weights/new_pretrainedweights.pth")#/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth
-# model.load_state_dict(state_dict)
+MODEL.load(12,'/shared/rc/defake/Deepfake-Slayer/models_threshold/FFDmodel/')
+
 OPTIM = optim.Adam(MODEL.model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 LOSS_CSE = nn.CrossEntropyLoss().cuda()
 LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
+
+def iou_loss(predicted_mask, ground_truth_mask, smooth=1e-6):
+  predicted_mask = (predicted_mask >= 0.3).float()
+  predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
+  ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
+  intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
+  union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
+  iou = (intersection + smooth) / (union + smooth)
+  return 1 - iou.mean()
 
 def calculate_losses(batch):
   img = batch['image'].cuda()
   msk = batch['msk'].cuda()
   lab = batch['label'].cuda()
   x, mask, vec = MODEL.model(img)
+  loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  loss = loss_l1 + loss_cse
+  loss = 0.3*loss_l1 + 0.7*loss_iou + loss_cse
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
-  res = { 'lab': lab, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
+  res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
   results = {}
   for r in res:
     results[r] = res[r].squeeze().detach().cpu().numpy()#res[r].squeeze().cpu().detach().numpy()
-  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'acc': acc }, results
+  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'loss_iou': loss_iou, 'acc': acc }, results
+
+def preprocess_frame_list(frame_paths):
+  video_dict = {}
+  for path in frame_paths:
+    video_id = path[0].split('/')[-2]
+    if video_id not in video_dict.keys():
+      video_dict[video_id] = [path]
+    else:
+      video_dict[video_id].append(path)
+  return video_dict
+
+def get_uniform_frames(train_list,num_frames):
+  video_dict = preprocess_frame_list(train_list)
+  selected_frames = []
+  for key in video_dict.keys():
+      frames = video_dict[key]
+      frame_count = len(frames)
+      if frame_count <= num_frames:
+          selected_frames.extend(frames)  # If frames are fewer, include all
+      else:
+          interval = frame_count // num_frames
+          uniformly_spaced_frames = [frames[i * interval] for i in range(num_frames)]
+          selected_frames.extend(uniformly_spaced_frames)
+  return selected_frames
+
+def threshold_mask(mask, threshold=0.5):
+    return (mask >= threshold).float()
 
 def main():
   transform = transforms.Compose([
@@ -384,7 +420,8 @@ def main():
   transform_mask = transforms.Compose([
       transforms.Resize((19,19)),
       transforms.Grayscale(num_output_channels=1),
-      transforms.ToTensor()
+      transforms.ToTensor(),
+      transforms.Lambda(lambda mask: threshold_mask(mask, threshold=0.3))
   ])
 
   with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceSwap.pkl', 'rb') as file:
@@ -402,6 +439,8 @@ def main():
 
   train_list = FaceSwap_mask['train'] + Face2Face_mask['train'] + FaceShifter_mask['train'] + fake_NeuralTextures_mask['train'] + real_yt_train + real_actors_train
   val_list = FaceSwap_mask['val'] + Face2Face_mask['val'] + FaceShifter_mask['val'] + fake_NeuralTextures_mask['val'] + real_yt_train + real_actors_train
+  train_list = get_uniform_frames(train_list,70)
+  val_list = get_uniform_frames(val_list,70)
   train_dataset = FacialForgeryDataset(train_list, transform, transform_mask)
   val_dataset = FacialForgeryDataset(val_list, transform, transform_mask)
 
@@ -438,7 +477,7 @@ def main():
       OPTIM.zero_grad()
       losses['loss'].backward()
       OPTIM.step()
-      savemat('{0}_{1}_{2}.mat'.format(resultdir, e, id), results)
+      # savemat('{0}_{1}_{2}.mat'.format(resultdir, e, id), results)
       file.write(f"{id} " + " ".join(["{}: {:.3f}".format(key, losses[key].item()) for key in losses]))
       file.write("\n")
       for key, value in losses.items():
