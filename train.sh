@@ -21,6 +21,6 @@
 
 source /shared/rc/defake/Deepfake-Slayer/deepfake/bin/activate	# Run the command hostname
 # spack env activate default-ml-23110801
-python /shared/rc/defake/Deepfake-Slayer/scripts/train.py
+python /shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/train.py
 deactivate
 # spack env deactivate
