@@ -374,7 +374,7 @@ def calculate_losses(batch):
   loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  loss = 0.3*loss_l1 + 0.7*loss_iou + loss_cse
+  loss = 0.8*(0.3*loss_l1 + 0.7*loss_iou) + 0.2*loss_cse
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
   res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
