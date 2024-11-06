@@ -350,7 +350,7 @@ if not os.path.exists(MODEL_DIR):
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
 model = MODEL.model.cuda()
-MODEL.load(12,'/shared/rc/defake/Deepfake-Slayer/models_threshold/FFDmodel/')
+MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary_mask/FFDmodel/best/')
 
 OPTIM = optim.Adam(MODEL.model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 LOSS_CSE = nn.CrossEntropyLoss().cuda()
