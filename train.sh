@@ -12,7 +12,7 @@
 #SBATCH --mail-user=slack:@U03V0JPFMCZ	# Slack username to notify
 #SBATCH --mail-type=ALL			# Type of slack notifications to send
 
-#SBATCH --time=3-00:00:00		# Time limit
+#SBATCH --time=1-00:00:00		# Time limit
 #SBATCH --nodes=4			# How many nodes to run on
 #SBATCH --ntasks=4			# How many tasks per node
 #SBATCH --cpus-per-task=2		# Number of CPUs per task
