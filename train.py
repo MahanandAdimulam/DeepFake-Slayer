@@ -350,7 +350,7 @@ if not os.path.exists(MODEL_DIR):
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
 model = MODEL.model.cuda()
-MODEL.load(12,'/shared/rc/defake/Deepfake-Slayer/models_threshold/FFDmodel/')
+MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')
 
 OPTIM = optim.Adam(MODEL.model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 LOSS_CSE = nn.CrossEntropyLoss().cuda()
@@ -374,7 +374,7 @@ def calculate_losses(batch):
   loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  loss = 0.3*loss_l1 + 0.7*loss_iou + loss_cse
+  loss = 0.8*(0.3*loss_l1 + 0.7*loss_iou) + 0.2*loss_cse
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
   res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
