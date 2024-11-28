@@ -1,6 +1,6 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=FaceForensicsEvaluation		# Name for your job
+#SBATCH --job-name=WildDeepfakeEvaluation		# Name for your job
 #SBATCH --comment="Evaluation of the model"		# Comment for your job
 
 #SBATCH --account=defake		# Project account to run your job under
@@ -21,6 +21,6 @@
 
 source /shared/rc/defake/Deepfake-Slayer/deepfake/bin/activate				# Run the command hostname
 # spack env activate default-ml-23110801
-python /shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/eval.py
+python /shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/eval_WildDeepfake.py
 deactivate
 # spack env deactivate

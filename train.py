@@ -278,7 +278,7 @@ class Xception(nn.Module):
           i.bias.data.fill_(0)
 
 class Model:
-  def __init__(self, maptype='None', templates=None, num_classes=2, load_pretrain=True):
+  def __init__(self, maptype='None', templates=None, num_classes=1, load_pretrain=True):
     model = Xception(maptype, templates, num_classes=num_classes)
     if load_pretrain:
       # state_dict = torch.load("/shared/rc/defake/Deepfake-Slayer/pretrained_weights/xception_best.pth")
@@ -300,8 +300,10 @@ class Model:
     filename = '{0}{1:06d}.tar'.format(model_dir, epoch)
     print('Loading model from {0}'.format(filename))
     if os.path.exists(filename):
-      state = torch.load(filename)
-      self.model.load_state_dict(state['net'])
+      state = torch.load(filename)#, map_location=torch.device('cpu'))
+      state['net'].pop('last_linear.weight', None)
+      state['net'].pop('last_linear.bias', None)
+      self.model.load_state_dict(state['net'], strict=False)
       print('Model loaded from {0}'.format(filename))
     else:
       print('Failed to load model from {0}'.format(filename))
@@ -348,12 +350,13 @@ MODEL_DIR = MODEL_DIR + MODEL_NAME + '/'
 if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)
 
-MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
+MODEL = Model(MAPTYPE, TEMPLATES, 1, False)
 model = MODEL.model.cuda()
 MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')
 
 OPTIM = optim.Adam(MODEL.model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-LOSS_CSE = nn.CrossEntropyLoss().cuda()
+# LOSS_CSE = nn.CrossEntropyLoss().cuda()
+LOSS_BCE = nn.BCEWithLogitsLoss().cuda()
 LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
 
@@ -373,15 +376,18 @@ def calculate_losses(batch):
   x, mask, vec = MODEL.model(img)
   loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
-  loss_cse = LOSS_CSE(x, lab)
-  loss = 0.8*(0.3*loss_l1 + 0.7*loss_iou) + 0.2*loss_cse
-  pred = torch.max(x, dim=1)[1]
+  # loss_cse = LOSS_CSE(x, lab)
+  loss_bce = LOSS_BCE(x.view(-1), lab.float())
+  # loss = 0.3*loss_l1 + 0.7*loss_iou + 0.3*loss_cse
+  loss = 0.3*loss_l1 + 0.7*loss_iou + loss_bce
+  # pred = torch.max(x, dim=1)[1]
+  pred = (x > 0.5).long()
   acc = (pred == lab).float().mean()
   res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
   results = {}
   for r in res:
     results[r] = res[r].squeeze().detach().cpu().numpy()#res[r].squeeze().cpu().detach().numpy()
-  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'loss_iou': loss_iou, 'acc': acc }, results
+  return { 'loss': loss, 'loss_bce': loss_bce, 'loss_iou': loss_iou, 'acc': acc }, results
 
 def preprocess_frame_list(frame_paths):
   video_dict = {}

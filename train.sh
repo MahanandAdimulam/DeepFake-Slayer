@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=FaceForensicsTrain		# Name for your job
-#SBATCH --comment="Training the model on binary mask"		# Comment for your job
+#SBATCH --comment="Training the model on binary mask with binary cross entropy loss"		# Comment for your job
 
 #SBATCH --account=defake		# Project account to run your job under
 #SBATCH --partition=tier3		# Partition to run your job on

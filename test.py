@@ -30,15 +30,18 @@ class FacialForgeryDataset(Dataset):
         return len(self.mask_list)
 
     def __getitem__(self, idx: int):
-        image = self.mask_list[idx]
+        image, mask = self.mask_list[idx]
         label = 0
         image = Image.open(image)
         image = self.transform(image)
+        if type(mask)==str:
+          mask = Image.open(mask)
+          mask = self.transform_mask(mask)
         if 'real' in self.mask_list[idx][0]:
           label = torch.tensor(0)
         else:
           label = torch.tensor(1)
-        return {'image': image, 'label': label}
+        return {'image': image, 'label': label, 'msk': mask}
 
 class SeparableConv2d(nn.Module):
   def __init__(self, c_in, c_out, ks, stride=1, padding=0, dilation=1, bias=False):
@@ -296,8 +299,9 @@ class Model:
     filename = '{0}{1:06d}.tar'.format(model_dir, epoch)
     print('Loading model from {0}'.format(filename))
     if os.path.exists(filename):
-      state = torch.load(filename, map_location=torch.device('cpu'))
+      state = torch.load(filename)#, map_location=torch.device('cpu'))
       self.model.load_state_dict(state['net'])
+      print('Model Loaded from {0}'.format(filename))
     else:
       print('Failed to load model from {0}'.format(filename))
 
@@ -310,7 +314,7 @@ def get_templates():
   templates = templates.squeeze(1)
   return templates
 
-MODEL_DIR = '/shared/rc/defake/Deepfake-Slayer/models/test/'
+MODEL_DIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test/'
 # MODEL_DIR = '/shared/rc/defake/Deepfake-Slayer/models/test/'
 BACKBONE = 'xcp'
 MAPTYPE = 'reg'#'tmp'
@@ -349,7 +353,7 @@ if not os.path.exists(MODEL_DIR):
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
 model = MODEL.model.cuda()
-MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models-1-18-epochs/FFDmodel/')#/content/models/FFD models/000016.tar
+MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')#/content/models/FFD models/000016.tar
 # MODEL = Model(MAPTYPE, 2, False)
 
 # MODEL.model#.cuda()
@@ -362,24 +366,38 @@ LOSS_CSE = nn.CrossEntropyLoss().cuda()
 LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
 
+def iou_loss(predicted_mask, ground_truth_mask, smooth=1e-6):
+    predicted_mask = (predicted_mask >= 0.3).float()
+    
+    predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
+    ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
+
+    intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
+    union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
+
+    iou = (intersection + smooth) / (union + smooth)
+
+    return 1 - iou.mean()
+
 def calculate_losses(batch):
   img = batch['image'].cuda()
   msk = batch['msk'].cuda()
   lab = batch['label'].cuda()
   x, mask, vec = MODEL.model(img)
+  loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  loss = loss_cse
+  loss = loss_cse + 0.3*loss_l1 + 0.7*loss_iou
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
-  res = { 'lab': lab, 'score': x, 'pred': pred, 'mask': mask }
+  res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
   results = {}
   for r in res:
     results[r] = res[r].squeeze().cpu().numpy()
-  return { 'loss': loss, 'loss_cse': loss_cse, 'acc': acc }, results
+  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'loss_iou': loss_iou, 'acc': acc }, results
 
 # EPOCH = '80'/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/test/xcp_reg
-RESDIR = '/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'#/content/models/xcp_tmp/results_0.mat /content/models/test/xcp_reg
+RESDIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test/xcp_reg/'#/content/models/xcp_tmp/results_0.mat /content/models/test/xcp_reg
 # RESDIR = '/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg'#/content/models/xcp_tmp/results_0.mat /content/models/test/xcp_reg
 # RESFILENAMES = glob.glob(RESDIR + '*.mat')
 # print("Resfilenames: ", RESFILENAMES)
@@ -387,13 +405,8 @@ MASK_THRESHOLD = 0.5
 
 # print('{0} result files'.format(len(RESFILENAMES)))
 
-def compute_result_file(rfn):
-    rf = loadmat(rfn)
-    # print(rf)
-    res = {}
-    for r in ['lab', 'score', 'pred', 'mask']:
-      res[r] = rf[r].squeeze()
-    return res
+def threshold_mask(mask, threshold=0.5):
+    return (mask >= threshold).float()
 
 def main():
   transform = transforms.Compose([
@@ -407,7 +420,8 @@ def main():
       # transforms.ToPILImage(),
       transforms.Resize((19,19)),
       transforms.Grayscale(num_output_channels=1),
-      transforms.ToTensor()
+      transforms.ToTensor(),
+      transforms.Lambda(lambda mask: threshold_mask(mask, threshold=0.3))
   ])
 
   with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceSwap.pkl', 'rb') as file:
@@ -447,6 +461,7 @@ def main():
     file.write(f"{id} " + " ".join(["{}: {:.3f}".format(key, losses[key].item()) for key in losses]))
     file.write("\n")
   file.write('Testing complete')
+  print('Testing complete')
   file.close()
 
 if __name__ == "__main__":

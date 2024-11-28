@@ -19,7 +19,7 @@ from scipy.io import loadmat
 from sklearn import metrics
 from sklearn.metrics import auc
 
-class FacialForgeryDataset(Dataset):
+class WildDeepfakeDataset(Dataset):
     def __init__(self, mask_list, transform, transform_mask):
         self.transform = transform
         self.mask_list = mask_list
@@ -29,14 +29,13 @@ class FacialForgeryDataset(Dataset):
         return len(self.mask_list)
 
     def __getitem__(self, idx: int):
-        image, mask = self.mask_list[idx]
+        image = self.mask_list[idx]
         label = 0
         image = Image.open(image)
         image = self.transform(image)
-        if type(mask)==str:
-          mask = Image.open(mask)
-          mask = self.transform_mask(mask)
-        if 'real' in self.mask_list[idx][0]:
+        mask = torch.zeros(19, 19)
+        # mask = self.transform_mask(mask)
+        if 'real' in self.mask_list[idx]:
           label = torch.tensor(0)
         else:
           label = torch.tensor(1)
@@ -300,7 +299,6 @@ class Model:
     if os.path.exists(filename):
       state = torch.load(filename)
       self.model.load_state_dict(state['net'])
-      print('Model loaded from {0}'.format(filename))
     else:
       print('Failed to load model from {0}'.format(filename))
 
@@ -325,7 +323,7 @@ if MAPTYPE in ['tmp', 'pca_tmp']:
   TEMPLATES = get_templates()
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
-MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')
+MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')#'/shared/rc/defake/Deepfake-Slayer/models/FFDmodel/'
 
 model = MODEL.model.cuda()
 # state_dict = torch.load("/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth")#/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth
@@ -337,18 +335,15 @@ LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
 
 def iou_loss(predicted_mask, ground_truth_mask, smooth=1e-6):
-  predicted_mask = (predicted_mask >= 0.3).astype(float)
-  ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+    predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
+    ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
 
-  predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
-  ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
+    intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
+    union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
 
-  intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
-  union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
+    iou = (intersection + smooth) / (union + smooth)
 
-  iou = (intersection + smooth) / (union + smooth)
-
-  return 1 - iou.mean()
+    return 1 - iou.mean()
 
 def calculate_losses(batch):
   img = batch['image'].cuda()
@@ -358,7 +353,7 @@ def calculate_losses(batch):
   loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  loss = loss_cse + 0.3*loss_l1 + 0.7*loss_iou
+  loss = loss_cse + 0.5*loss_l1 + 0.5*loss_iou
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
   res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
@@ -425,14 +420,15 @@ def iou_accuracy_fake(predicted_mask, ground_truth_mask, predicted_labels,smooth
 
 def eval():
   # output = "output/eval"
-  output = "/shared/rc/defake/Deepfake-Slayer/output/eval"
+  output = "/shared/rc/defake/Deepfake-Slayer/output/eval"#/shared/rc/defake/Deepfake-Slayer/output/eval"
   if not os.path.exists(output):
         os.makedirs(output)
-  file = open(f'{output}/eval.txt','w')
+  file = open(f'{output}/eval_WildDeepfake.txt','w')
 
   # Compile the results into a single variable for processing
   TOTAL_RESULTS = {}
-  RESDIR = '/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'
+  # '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/test/xcp_reg'
+  RESDIR = "/shared/rc/defake/Deepfake-Slayer/models_binary/test_WildDeepfake/xcp_reg/"#'/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'
   RESFILENAMES = glob.glob(RESDIR + '*.mat')
   for rfn in RESFILENAMES:
     rf = compute_result_file(rfn)
@@ -452,6 +448,7 @@ def eval():
   MASK_ACC_IOU = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'])
   MASK_ACC_IOU_FAKE = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'],TOTAL_RESULTS['pred'])
 
+
   FPR, TPR, THRESH = metrics.roc_curve(TOTAL_RESULTS['lab'], TOTAL_RESULTS['score'][:,1], drop_intermediate=False)
   AUC = auc(FPR, TPR)
   FNR = 1 - TPR
@@ -460,11 +457,16 @@ def eval():
   TPR_AT_FPR_THRESHOLDS = {}
   for t in range(-1, -7, -1):
     thresh = 10**t
-    TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
+    if np.any(FPR <= thresh):
+        TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
+    else:
+        TPR_AT_FPR_THRESHOLDS[thresh] = 0  # Assign a default value if no elements satisfy the condition
+        print(f"No valid TPR values for threshold {thresh}")
+
 
   # Print out the performance numbers
   file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
-  file.write('Mask Accuracy: {0:.4f}\n'.format(MASK_ACC))
+  file.write('Mask Accuracy PBCA: {0:.4f}\n'.format(MASK_ACC))
   file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
   file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
   file.write('AUC: {0:.4f}\n'.format(AUC))
@@ -483,11 +485,10 @@ def eval():
   plt.xlim([0.5,1])
   plt.ylim([0, 1])
   plt.grid()
-  plt.savefig(output+'/AUC.png')
+  plt.savefig(output+'/AUC_WildDeepfake.png')
 
 def main():
   eval()
-  print('Evaluation complete')
 
 if __name__ == "__main__":
     main()

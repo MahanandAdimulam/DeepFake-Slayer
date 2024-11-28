@@ -298,7 +298,7 @@ class Model:
     filename = '{0}{1:06d}.tar'.format(model_dir, epoch)
     print('Loading model from {0}'.format(filename))
     if os.path.exists(filename):
-      state = torch.load(filename)
+      state = torch.load(filename)#, map_location=torch.device('cpu'))
       self.model.load_state_dict(state['net'])
       print('Model loaded from {0}'.format(filename))
     else:
@@ -325,7 +325,7 @@ if MAPTYPE in ['tmp', 'pca_tmp']:
   TEMPLATES = get_templates()
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
-MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')
+MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')#'/shared/rc/defake/Deepfake-Slayer/models/FFDmodel/'
 
 model = MODEL.model.cuda()
 # state_dict = torch.load("/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth")#/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth
@@ -337,18 +337,15 @@ LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
 
 def iou_loss(predicted_mask, ground_truth_mask, smooth=1e-6):
-  predicted_mask = (predicted_mask >= 0.3).astype(float)
-  ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+    predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
+    ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
 
-  predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
-  ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
+    intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
+    union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
 
-  intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
-  union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
+    iou = (intersection + smooth) / (union + smooth)
 
-  iou = (intersection + smooth) / (union + smooth)
-
-  return 1 - iou.mean()
+    return 1 - iou.mean()
 
 def calculate_losses(batch):
   img = batch['image'].cuda()
@@ -424,70 +421,81 @@ def iou_accuracy_fake(predicted_mask, ground_truth_mask, predicted_labels,smooth
     return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
 
 def eval():
-  # output = "output/eval"
-  output = "/shared/rc/defake/Deepfake-Slayer/output/eval"
-  if not os.path.exists(output):
-        os.makedirs(output)
-  file = open(f'{output}/eval.txt','w')
+  for category in ['FaceSwap', 'Face2Face', 'FaceShifter', 'fake_NeuralTextures', 'real_yt', 'real_actors']:
+    # output = "output/eval"
+    output = "/shared/rc/defake/Deepfake-Slayer/output/eval"#/shared/rc/defake/Deepfake-Slayer/output/eval"
+    if not os.path.exists(output):
+          os.makedirs(output)
+    file = open(f'{output}/eval_{category}.txt','w')
 
-  # Compile the results into a single variable for processing
-  TOTAL_RESULTS = {}
-  RESDIR = '/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'
-  RESFILENAMES = glob.glob(RESDIR + '*.mat')
-  for rfn in RESFILENAMES:
-    rf = compute_result_file(rfn)
-    for r in rf:
-      if r not in TOTAL_RESULTS:
-        TOTAL_RESULTS[r] = rf[r]
+    # Compile the results into a single variable for processing
+    TOTAL_RESULTS = {}
+    # '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/test/xcp_reg'
+    RESDIR = f"/shared/rc/defake/Deepfake-Slayer/models_binary/test_{category}/xcp_reg/"#'/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'
+    RESFILENAMES = glob.glob(RESDIR + '*.mat')
+    for rfn in RESFILENAMES:
+      rf = compute_result_file(rfn)
+      for r in rf:
+        if r not in TOTAL_RESULTS:
+          TOTAL_RESULTS[r] = rf[r]
+        else:
+          TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
+
+    file.write('Found {0} total images with scores.\n'.format(TOTAL_RESULTS['lab'].shape[0]))
+    file.write('  {0} results are real images.\n'.format((TOTAL_RESULTS['lab'] == 0).sum()))
+    file.write('  {0} results are fake images.\n'.format((TOTAL_RESULTS['lab'] == 1).sum()))
+
+    # Compute the performance numbers
+    PRED_ACC = (TOTAL_RESULTS['lab'] == TOTAL_RESULTS['pred']).astype(np.float32).mean()
+    MASK_ACC = ((TOTAL_RESULTS['mask'] >= MASK_THRESHOLD) == (TOTAL_RESULTS['msk'] >= MASK_THRESHOLD)).astype(np.float32).mean()
+    MASK_ACC_IOU = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'])
+    MASK_ACC_IOU_FAKE = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'],TOTAL_RESULTS['pred'])
+
+
+    FPR, TPR, THRESH = metrics.roc_curve(TOTAL_RESULTS['lab'], TOTAL_RESULTS['score'][:,1], drop_intermediate=False)
+    AUC = auc(FPR, TPR)
+    FNR = 1 - TPR
+    EER = FNR[np.argmin(np.absolute(FNR - FPR))]
+    TPR_AT_FPR_NOT_0 = TPR[FPR != 0].min()
+    TPR_AT_FPR_THRESHOLDS = {}
+    for t in range(-1, -7, -1):
+      thresh = 10**t
+      filtered_tpr = TPR[FPR <= thresh]
+      if filtered_tpr.size > 0:
+          TPR_AT_FPR_THRESHOLDS[thresh] = filtered_tpr.max()
       else:
-        TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
+          TPR_AT_FPR_THRESHOLDS[thresh] = 0   
+    # for t in range(-1, -7, -1):
+    #   thresh = 10**t
+    #   TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
 
-  file.write('Found {0} total images with scores.\n'.format(TOTAL_RESULTS['lab'].shape[0]))
-  file.write('  {0} results are real images.\n'.format((TOTAL_RESULTS['lab'] == 0).sum()))
-  file.write('  {0} results are fake images.\n'.format((TOTAL_RESULTS['lab'] == 1).sum()))
+    # Print out the performance numbers
+    file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
+    file.write('Mask Accuracy PBCA: {0:.4f}\n'.format(MASK_ACC))
+    file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
+    file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
+    file.write('AUC: {0:.4f}\n'.format(AUC))
+    file.write('EER: {0:.4f}\n'.format(EER))
+    file.write('Minimum TPR at FPR != 0: {0:.4f}\n'.format(TPR_AT_FPR_NOT_0))
 
-  # Compute the performance numbers
-  PRED_ACC = (TOTAL_RESULTS['lab'] == TOTAL_RESULTS['pred']).astype(np.float32).mean()
-  MASK_ACC = ((TOTAL_RESULTS['mask'] >= MASK_THRESHOLD) == (TOTAL_RESULTS['msk'] >= MASK_THRESHOLD)).astype(np.float32).mean()
-  MASK_ACC_IOU = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'])
-  MASK_ACC_IOU_FAKE = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'],TOTAL_RESULTS['pred'])
+    file.write('TPR at FPR Thresholds:\n')
+    for t in TPR_AT_FPR_THRESHOLDS:
+      file.write('  {0:.10f} TPR at {1:.10f} FPR\n'.format(TPR_AT_FPR_THRESHOLDS[t], t))
 
-  FPR, TPR, THRESH = metrics.roc_curve(TOTAL_RESULTS['lab'], TOTAL_RESULTS['score'][:,1], drop_intermediate=False)
-  AUC = auc(FPR, TPR)
-  FNR = 1 - TPR
-  EER = FNR[np.argmin(np.absolute(FNR - FPR))]
-  TPR_AT_FPR_NOT_0 = TPR[FPR != 0].min()
-  TPR_AT_FPR_THRESHOLDS = {}
-  for t in range(-1, -7, -1):
-    thresh = 10**t
-    TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
-
-  # Print out the performance numbers
-  file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
-  file.write('Mask Accuracy: {0:.4f}\n'.format(MASK_ACC))
-  file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
-  file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
-  file.write('AUC: {0:.4f}\n'.format(AUC))
-  file.write('EER: {0:.4f}\n'.format(EER))
-  file.write('Minimum TPR at FPR != 0: {0:.4f}\n'.format(TPR_AT_FPR_NOT_0))
-
-  file.write('TPR at FPR Thresholds:\n')
-  for t in TPR_AT_FPR_THRESHOLDS:
-    file.write('  {0:.10f} TPR at {1:.10f} FPR\n'.format(TPR_AT_FPR_THRESHOLDS[t], t))
-
-  file.close()
-  fig = plt.figure()
-  plt.plot(FPR, TPR)
-  plt.xlabel('FPR (%)')
-  plt.ylabel('TPR (%)')
-  plt.xlim([0.5,1])
-  plt.ylim([0, 1])
-  plt.grid()
-  plt.savefig(output+'/AUC.png')
+    file.close()
+    fig = plt.figure()
+    plt.plot(FPR, TPR)
+    plt.xlabel('FPR (%)')
+    plt.ylabel('TPR (%)')
+    plt.xlim([0.5,1])
+    plt.ylim([0, 1])
+    plt.grid()
+    plt.savefig(output+f'/AUC_{category}.png')
+    print(f'Evaluation of {category} done')
+  print('Evaluation done')
 
 def main():
   eval()
-  print('Evaluation complete')
 
 if __name__ == "__main__":
     main()
