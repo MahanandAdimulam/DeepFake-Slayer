@@ -433,7 +433,7 @@ def eval():
 
         # Compile the results into a single variable for processing
         TOTAL_RESULTS = {}
-        RESDIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_{color}/'
+        RESDIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_{color}/xcp_reg/'
         RESFILENAMES = glob.glob(RESDIR + '*.mat')
         for rfn in RESFILENAMES:
             rf = compute_result_file(rfn)
@@ -442,7 +442,7 @@ def eval():
                     TOTAL_RESULTS[r] = rf[r]
                 else:
                     TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
-
+        print(TOTAL_RESULTS.keys())
         file.write('Found {0} total images with scores.\n'.format(TOTAL_RESULTS['lab'].shape[0]))
         file.write('  {0} results are real images.\n'.format((TOTAL_RESULTS['lab'] == 0).sum()))
         file.write('  {0} results are fake images.\n'.format((TOTAL_RESULTS['lab'] == 1).sum()))
