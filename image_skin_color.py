@@ -151,7 +151,7 @@ def main():
     process_images_from_total_results(
         TOTAL_RESULTS, 
         '/shared/rc/defake/Deepfake-Slayer/output/test/output_skin_tone.csv', 
-        batch_size=128,
+        batch_size=16,
         start_index=start_index
     )
 
