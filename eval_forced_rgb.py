@@ -434,6 +434,7 @@ def eval():
         # Compile the results into a single variable for processing
         TOTAL_RESULTS = {}
         RESDIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_{color}/xcp_reg/'
+        print(RESDIR)
         RESFILENAMES = glob.glob(RESDIR + '*.mat')
         for rfn in RESFILENAMES:
             rf = compute_result_file(rfn)
