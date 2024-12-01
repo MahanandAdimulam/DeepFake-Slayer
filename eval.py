@@ -300,6 +300,7 @@ class Model:
     if os.path.exists(filename):
       state = torch.load(filename)
       self.model.load_state_dict(state['net'])
+      print('Model loaded from {0}'.format(filename))
     else:
       print('Failed to load model from {0}'.format(filename))
 
@@ -324,7 +325,7 @@ if MAPTYPE in ['tmp', 'pca_tmp']:
   TEMPLATES = get_templates()
 
 MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
-MODEL.load(16,'/shared/rc/defake/Deepfake-Slayer/models/FFDmodel/')
+MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')
 
 model = MODEL.model.cuda()
 # state_dict = torch.load("/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth")#/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth
@@ -335,21 +336,36 @@ LOSS_CSE = nn.CrossEntropyLoss().cuda()
 LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
 
+def iou_loss(predicted_mask, ground_truth_mask, smooth=1e-6):
+  predicted_mask = (predicted_mask >= 0.3).astype(float)
+  ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+
+  predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
+  ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
+
+  intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
+  union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
+
+  iou = (intersection + smooth) / (union + smooth)
+
+  return 1 - iou.mean()
+
 def calculate_losses(batch):
   img = batch['image'].cuda()
   msk = batch['msk'].cuda()
   lab = batch['label'].cuda()
   x, mask, vec = MODEL.model(img)
+  loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  loss = loss_l1 + loss_cse
+  loss = loss_cse + 0.3*loss_l1 + 0.7*loss_iou
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
-  res = { 'lab': lab, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
+  res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
   results = {}
   for r in res:
     results[r] = res[r].squeeze().cpu().numpy()
-  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'acc': acc }, results
+  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'loss_iou': loss_iou, 'acc': acc }, results
 
 MASK_THRESHOLD = 0.5
 
@@ -360,6 +376,52 @@ def compute_result_file(rfn):
     for r in ['lab', 'msk', 'score', 'pred', 'mask']:
       res[r] = rf[r].squeeze()
     return res
+
+def iou_accuracy(predicted_mask, ground_truth_mask,smooth=1e-6):
+    predicted_mask = (predicted_mask >= 0.3).astype(float)
+    ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+
+    predicted_mask = predicted_mask.reshape(predicted_mask.shape[0], -1)
+    ground_truth_mask = ground_truth_mask.reshape(ground_truth_mask.shape[0], -1)
+
+    # Calculate intersection and union
+    intersection = (predicted_mask * ground_truth_mask).sum(axis=1)
+    union = predicted_mask.sum(axis=1) + ground_truth_mask.sum(axis=1) - intersection
+
+    # IoU for each image in the batch
+    iou = (intersection + smooth) / (union + smooth)
+
+    # Return mean IoU (accuracy) across the batch
+    return iou.mean()
+    # return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
+
+def iou_accuracy_fake(predicted_mask, ground_truth_mask, predicted_labels,smooth=1e-6):
+    predicted_mask = (predicted_mask >= 0.3).astype(float)
+    ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+
+    predicted_mask = predicted_mask.reshape(predicted_mask.shape[0], -1)
+    ground_truth_mask = ground_truth_mask.reshape(ground_truth_mask.shape[0], -1)
+
+    # Calculate intersection and union
+    intersection = (predicted_mask * ground_truth_mask).sum(axis=1)
+    union = predicted_mask.sum(axis=1) + ground_truth_mask.sum(axis=1) - intersection
+
+    # IoU for each image in the batch
+    iou = (intersection + smooth) / (union + smooth)
+    if np.isscalar(predicted_labels):
+        predicted_labels = np.array([predicted_labels])
+
+    iou = np.zeros(predicted_labels.shape[0])
+
+    # Calculate IoU only for images with predicted label 1
+    for i in range(predicted_labels.shape[0]):
+        if predicted_labels[i] == 1:
+            iou[i] = (intersection[i] + smooth) / (union[i] + smooth)
+        else:
+            iou[i] = 0.0  # IoU is set to 0 if predicted label is 0
+
+    # Return mean IoU (accuracy) across the batch
+    return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
 
 def eval():
   # output = "output/eval"
@@ -387,6 +449,8 @@ def eval():
   # Compute the performance numbers
   PRED_ACC = (TOTAL_RESULTS['lab'] == TOTAL_RESULTS['pred']).astype(np.float32).mean()
   MASK_ACC = ((TOTAL_RESULTS['mask'] >= MASK_THRESHOLD) == (TOTAL_RESULTS['msk'] >= MASK_THRESHOLD)).astype(np.float32).mean()
+  MASK_ACC_IOU = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'])
+  MASK_ACC_IOU_FAKE = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'],TOTAL_RESULTS['pred'])
 
   FPR, TPR, THRESH = metrics.roc_curve(TOTAL_RESULTS['lab'], TOTAL_RESULTS['score'][:,1], drop_intermediate=False)
   AUC = auc(FPR, TPR)
@@ -401,6 +465,8 @@ def eval():
   # Print out the performance numbers
   file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
   file.write('Mask Accuracy: {0:.4f}\n'.format(MASK_ACC))
+  file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
+  file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
   file.write('AUC: {0:.4f}\n'.format(AUC))
   file.write('EER: {0:.4f}\n'.format(EER))
   file.write('Minimum TPR at FPR != 0: {0:.4f}\n'.format(TPR_AT_FPR_NOT_0))
@@ -421,6 +487,7 @@ def eval():
 
 def main():
   eval()
+  print('Evaluation complete')
 
 if __name__ == "__main__":
     main()
