@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/eval_forced_rgb.py", line 495, in <module>
+    main()
+  File "/shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/eval_forced_rgb.py", line 491, in main
+    eval()
+  File "/shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/eval_forced_rgb.py", line 447, in eval
+    file.write('Found {0} total images with scores.\n'.format(TOTAL_RESULTS['lab'].shape[0]))
+KeyError: 'lab'
