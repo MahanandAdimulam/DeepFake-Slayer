@@ -436,12 +436,12 @@ def eval():
         RESDIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_{color}/'
         RESFILENAMES = glob.glob(RESDIR + '*.mat')
         for rfn in RESFILENAMES:
-        rf = compute_result_file(rfn)
-        for r in rf:
-            if r not in TOTAL_RESULTS:
-            TOTAL_RESULTS[r] = rf[r]
-            else:
-            TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
+            rf = compute_result_file(rfn)
+            for r in rf:
+                if r not in TOTAL_RESULTS:
+                    TOTAL_RESULTS[r] = rf[r]
+                else:
+                    TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
 
         file.write('Found {0} total images with scores.\n'.format(TOTAL_RESULTS['lab'].shape[0]))
         file.write('  {0} results are real images.\n'.format((TOTAL_RESULTS['lab'] == 0).sum()))
@@ -460,8 +460,8 @@ def eval():
         TPR_AT_FPR_NOT_0 = TPR[FPR != 0].min()
         TPR_AT_FPR_THRESHOLDS = {}
         for t in range(-1, -7, -1):
-        thresh = 10**t
-        TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
+            thresh = 10**t
+            TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
 
         # Print out the performance numbers
         file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
@@ -474,7 +474,7 @@ def eval():
 
         file.write('TPR at FPR Thresholds:\n')
         for t in TPR_AT_FPR_THRESHOLDS:
-        file.write('  {0:.10f} TPR at {1:.10f} FPR\n'.format(TPR_AT_FPR_THRESHOLDS[t], t))
+            file.write('  {0:.10f} TPR at {1:.10f} FPR\n'.format(TPR_AT_FPR_THRESHOLDS[t], t))
 
         file.close()
         fig = plt.figure()
@@ -488,7 +488,7 @@ def eval():
 
 def main():
   eval()
-  print('Evaluation complete')
+  print(' Forced RGB Values Evaluation complete')
 
 if __name__ == "__main__":
     main()
