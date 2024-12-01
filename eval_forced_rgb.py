@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 import os
 import torchvision.transforms.functional as TF
@@ -12,16 +11,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import sys
 import random
-# from scipy.io import savemat
-import shutil
+from scipy.io import savemat
 import torch.optim as optim
 from imageio import imread
 import glob
 from scipy.io import loadmat
 from sklearn import metrics
 from sklearn.metrics import auc
-import pickle
-from torch.utils.tensorboard import SummaryWriter
 
 class FacialForgeryDataset(Dataset):
     def __init__(self, mask_list, transform, transform_mask):
@@ -278,14 +274,16 @@ class Xception(nn.Module):
           i.bias.data.fill_(0)
 
 class Model:
-  def __init__(self, maptype='None', templates=None, num_classes=1, load_pretrain=True):
+  def __init__(self, maptype='None', templates=None, num_classes=2, load_pretrain=True):
     model = Xception(maptype, templates, num_classes=num_classes)
     if load_pretrain:
-      # state_dict = torch.load("/shared/rc/defake/Deepfake-Slayer/pretrained_weights/xception_best.pth")
-      state_dict = torch.load("/shared/rc/defake/Deepfake-Slayer/pretrained_weights/xception_best.pth")
-      for name, weights in state_dict.items():
+      state_dict = torch.load('/shared/rc/defake/Deepfake-Slayer/pretrained_weights/xception_best.pth')
+      # state_dict = torch.load("/content/gdrive/MyDrive/FFD Pretrained Weights/new_pretrainedweights.pth")#, map_location=torch.device('cpu')
+      for name, weights in state_dict:
         if 'pointwise' in name:
           state_dict[name] = weights.unsqueeze(-1).unsqueeze(-1)
+      del state_dict['fc.weight']
+      del state_dict['fc.bias']
       model.load_state_dict(state_dict, False)
     else:
       model.init_weights()
@@ -300,10 +298,8 @@ class Model:
     filename = '{0}{1:06d}.tar'.format(model_dir, epoch)
     print('Loading model from {0}'.format(filename))
     if os.path.exists(filename):
-      state = torch.load(filename)#, map_location=torch.device('cpu'))
-      state['net'].pop('last_linear.weight', None)
-      state['net'].pop('last_linear.bias', None)
-      self.model.load_state_dict(state['net'], strict=False)
+      state = torch.load(filename)
+      self.model.load_state_dict(state['net'])
       print('Model loaded from {0}'.format(filename))
     else:
       print('Failed to load model from {0}'.format(filename))
@@ -317,56 +313,41 @@ def get_templates():
   templates = templates.squeeze(1)
   return templates
 
-MODEL_DIR = '/shared/rc/defake/Deepfake-Slayer/models/train/'#/shared/rc/defake/Deepfake-Slayer/models/train
-# MODEL_DIR = '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/train/'
-BACKBONE = 'xcp'
 MAPTYPE = 'reg'#'tmp'
-BATCH_SIZE = 200
-MAX_EPOCHS = 100
-STEPS_PER_EPOCH = 1000
-LEARNING_RATE = 0.0001
-WEIGHT_DECAY = 0.001
-MASK_THRESHOLD = 0.5
 
-CONFIGS = {
-  'xcp': {
-          'img_size': (299, 299),
-          'map_size': (19, 19),
-          'norms': [[0.5] * 3, [0.5] * 3]
-         }
-}
-
-CONFIG = CONFIGS[BACKBONE]
 SEED = 1
 torch.cuda.manual_seed_all(SEED)
-DATA_TEST = None
-TEMPLATES = None
 
+DATA_TEST = None
+
+TEMPLATES = None
 if MAPTYPE in ['tmp', 'pca_tmp']:
   TEMPLATES = get_templates()
 
-MODEL_NAME = '{0}_{1}'.format(BACKBONE, MAPTYPE)
-MODEL_DIR = MODEL_DIR + MODEL_NAME + '/'
-if not os.path.exists(MODEL_DIR):
-        os.makedirs(MODEL_DIR)
-
-MODEL = Model(MAPTYPE, TEMPLATES, 1, False)
-model = MODEL.model.cuda()
+MODEL = Model(MAPTYPE, TEMPLATES, 2, False)
 MODEL.load(18,'/shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/')
 
-OPTIM = optim.Adam(MODEL.model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+model = MODEL.model.cuda()
+# state_dict = torch.load("/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth")#/content/gdrive/MyDrive/FFD pretrained weights/new_pretrainedweights.pth
+# state_dict = torch.load("/shared/rc/defake/Deepfake-Slayer/pretrained_weights/new_pretrainedweights.pth")
+# model.load_state_dict(state_dict)
+
 LOSS_CSE = nn.CrossEntropyLoss().cuda()
-# LOSS_BCE = nn.BCEWithLogitsLoss().cuda()
 LOSS_L1 = nn.L1Loss().cuda()
 MAXPOOL = nn.MaxPool2d(19).cuda()
 
 def iou_loss(predicted_mask, ground_truth_mask, smooth=1e-6):
-  predicted_mask = (predicted_mask >= 0.3).float()
+  predicted_mask = (predicted_mask >= 0.3).astype(float)
+  ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+
   predicted_mask = predicted_mask.view(predicted_mask.size(0), -1)
   ground_truth_mask = ground_truth_mask.view(ground_truth_mask.size(0), -1)
+
   intersection = (predicted_mask * ground_truth_mask).sum(dim=1)
   union = predicted_mask.sum(dim=1) + ground_truth_mask.sum(dim=1) - intersection
+
   iou = (intersection + smooth) / (union + smooth)
+
   return 1 - iou.mean()
 
 def calculate_losses(batch):
@@ -377,150 +358,137 @@ def calculate_losses(batch):
   loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
   loss_cse = LOSS_CSE(x, lab)
-  #loss_bce = LOSS_BCE(x.view(-1), lab.float())
-  loss = 0.3*loss_l1 + 0.7*loss_iou + loss_cse
-  # loss = 0.3*loss_l1 + 0.7*loss_iou + loss_bce
+  loss = loss_cse + 0.3*loss_l1 + 0.7*loss_iou
   pred = torch.max(x, dim=1)[1]
-  # pred = (x > 0.5).long()
   acc = (pred == lab).float().mean()
   res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
   results = {}
   for r in res:
-    results[r] = res[r].squeeze().detach().cpu().numpy()#res[r].squeeze().cpu().detach().numpy()
-  return { 'loss': loss, 'loss_cse': loss_cse, 'loss_iou': loss_iou, 'acc': acc }, results
+    results[r] = res[r].squeeze().cpu().numpy()
+  return { 'loss': loss, 'loss_l1': loss_l1, 'loss_cse': loss_cse, 'loss_iou': loss_iou, 'acc': acc }, results
 
-def preprocess_frame_list(frame_paths):
-  video_dict = {}
-  for path in frame_paths:
-    video_id = path[0].split('/')[-2]
-    if video_id not in video_dict.keys():
-      video_dict[video_id] = [path]
-    else:
-      video_dict[video_id].append(path)
-  return video_dict
+MASK_THRESHOLD = 0.5
 
-def get_uniform_frames(train_list,num_frames):
-  video_dict = preprocess_frame_list(train_list)
-  selected_frames = []
-  for key in video_dict.keys():
-      frames = video_dict[key]
-      frame_count = len(frames)
-      if frame_count <= num_frames:
-          selected_frames.extend(frames)  # If frames are fewer, include all
-      else:
-          interval = frame_count // num_frames
-          uniformly_spaced_frames = [frames[i * interval] for i in range(num_frames)]
-          selected_frames.extend(uniformly_spaced_frames)
-  return selected_frames
+def compute_result_file(rfn):
+    rf = loadmat(rfn)
+    # print(rf)
+    res = {}
+    for r in ['lab', 'msk', 'score', 'pred', 'mask']:
+      res[r] = rf[r].squeeze()
+    return res
 
-def threshold_mask(mask, threshold=0.5):
-    return (mask >= threshold).float()
+def iou_accuracy(predicted_mask, ground_truth_mask,smooth=1e-6):
+    predicted_mask = (predicted_mask >= 0.3).astype(float)
+    ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+
+    predicted_mask = predicted_mask.reshape(predicted_mask.shape[0], -1)
+    ground_truth_mask = ground_truth_mask.reshape(ground_truth_mask.shape[0], -1)
+
+    # Calculate intersection and union
+    intersection = (predicted_mask * ground_truth_mask).sum(axis=1)
+    union = predicted_mask.sum(axis=1) + ground_truth_mask.sum(axis=1) - intersection
+
+    # IoU for each image in the batch
+    iou = (intersection + smooth) / (union + smooth)
+
+    # Return mean IoU (accuracy) across the batch
+    return iou.mean()
+    # return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
+
+def iou_accuracy_fake(predicted_mask, ground_truth_mask, predicted_labels,smooth=1e-6):
+    predicted_mask = (predicted_mask >= 0.3).astype(float)
+    ground_truth_mask = (ground_truth_mask >= 0.3).astype(float)
+
+    predicted_mask = predicted_mask.reshape(predicted_mask.shape[0], -1)
+    ground_truth_mask = ground_truth_mask.reshape(ground_truth_mask.shape[0], -1)
+
+    # Calculate intersection and union
+    intersection = (predicted_mask * ground_truth_mask).sum(axis=1)
+    union = predicted_mask.sum(axis=1) + ground_truth_mask.sum(axis=1) - intersection
+
+    # IoU for each image in the batch
+    iou = (intersection + smooth) / (union + smooth)
+    if np.isscalar(predicted_labels):
+        predicted_labels = np.array([predicted_labels])
+
+    iou = np.zeros(predicted_labels.shape[0])
+
+    # Calculate IoU only for images with predicted label 1
+    for i in range(predicted_labels.shape[0]):
+        if predicted_labels[i] == 1:
+            iou[i] = (intersection[i] + smooth) / (union[i] + smooth)
+        else:
+            iou[i] = 0.0  # IoU is set to 0 if predicted label is 0
+
+    # Return mean IoU (accuracy) across the batch
+    return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
+
+def eval():
+    for color in ['red', 'green', 'blue']:
+        # output = "output/eval"
+        output = "/shared/rc/defake/Deepfake-Slayer/output/eval"
+        if not os.path.exists(output):
+            os.makedirs(output)
+        file = open(f'{output}/eval_rgb_{color}.txt','w')
+
+        # Compile the results into a single variable for processing
+        TOTAL_RESULTS = {}
+        RESDIR = '/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_{color}/'
+        RESFILENAMES = glob.glob(RESDIR + '*.mat')
+        for rfn in RESFILENAMES:
+        rf = compute_result_file(rfn)
+        for r in rf:
+            if r not in TOTAL_RESULTS:
+            TOTAL_RESULTS[r] = rf[r]
+            else:
+            TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
+
+        file.write('Found {0} total images with scores.\n'.format(TOTAL_RESULTS['lab'].shape[0]))
+        file.write('  {0} results are real images.\n'.format((TOTAL_RESULTS['lab'] == 0).sum()))
+        file.write('  {0} results are fake images.\n'.format((TOTAL_RESULTS['lab'] == 1).sum()))
+
+        # Compute the performance numbers
+        PRED_ACC = (TOTAL_RESULTS['lab'] == TOTAL_RESULTS['pred']).astype(np.float32).mean()
+        MASK_ACC = ((TOTAL_RESULTS['mask'] >= MASK_THRESHOLD) == (TOTAL_RESULTS['msk'] >= MASK_THRESHOLD)).astype(np.float32).mean()
+        MASK_ACC_IOU = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'])
+        MASK_ACC_IOU_FAKE = iou_accuracy(TOTAL_RESULTS['mask'], TOTAL_RESULTS['msk'],TOTAL_RESULTS['pred'])
+
+        FPR, TPR, THRESH = metrics.roc_curve(TOTAL_RESULTS['lab'], TOTAL_RESULTS['score'][:,1], drop_intermediate=False)
+        AUC = auc(FPR, TPR)
+        FNR = 1 - TPR
+        EER = FNR[np.argmin(np.absolute(FNR - FPR))]
+        TPR_AT_FPR_NOT_0 = TPR[FPR != 0].min()
+        TPR_AT_FPR_THRESHOLDS = {}
+        for t in range(-1, -7, -1):
+        thresh = 10**t
+        TPR_AT_FPR_THRESHOLDS[thresh] = TPR[FPR <= thresh].max()
+
+        # Print out the performance numbers
+        file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
+        file.write('Mask Accuracy: {0:.4f}\n'.format(MASK_ACC))
+        file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
+        file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
+        file.write('AUC: {0:.4f}\n'.format(AUC))
+        file.write('EER: {0:.4f}\n'.format(EER))
+        file.write('Minimum TPR at FPR != 0: {0:.4f}\n'.format(TPR_AT_FPR_NOT_0))
+
+        file.write('TPR at FPR Thresholds:\n')
+        for t in TPR_AT_FPR_THRESHOLDS:
+        file.write('  {0:.10f} TPR at {1:.10f} FPR\n'.format(TPR_AT_FPR_THRESHOLDS[t], t))
+
+        file.close()
+        fig = plt.figure()
+        plt.plot(FPR, TPR)
+        plt.xlabel('FPR (%)')
+        plt.ylabel('TPR (%)')
+        plt.xlim([0.5,1])
+        plt.ylim([0, 1])
+        plt.grid()
+        plt.savefig(output+'/AUC_rgb_{color}.png')
 
 def main():
-  transform = transforms.Compose([
-  transforms.Resize((299, 299)),# Assuming input size is 299x299 based on Xception architecture
-  transforms.ToTensor(),
-  transforms.Normalize(*[[0.5] * 3, [0.5] * 3])
-  ])
-
-  transform_mask = transforms.Compose([
-      transforms.Resize((19,19)),
-      transforms.Grayscale(num_output_channels=1),
-      transforms.ToTensor(),
-      transforms.Lambda(lambda mask: threshold_mask(mask, threshold=0.3))
-  ])
-
-  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceSwap.pkl', 'rb') as file:
-    FaceSwap_mask = pickle.load(file)
-  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/Face2Face.pkl', 'rb') as file:
-    Face2Face_mask = pickle.load(file)
-  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceShifter.pkl', 'rb') as file:
-    FaceShifter_mask = pickle.load(file)
-  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/fake_NeuralTextures.pkl', 'rb') as file:
-    fake_NeuralTextures_mask = pickle.load(file)
-  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_yt_train.pkl', 'rb') as file:
-    real_yt_train = pickle.load(file)
-  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_actors_train.pkl', 'rb') as file:
-    real_actors_train = pickle.load(file)
-
-  train_list = FaceSwap_mask['train'] + Face2Face_mask['train'] + FaceShifter_mask['train'] + fake_NeuralTextures_mask['train'] + real_yt_train + real_actors_train
-  val_list = FaceSwap_mask['val'] + Face2Face_mask['val'] + FaceShifter_mask['val'] + fake_NeuralTextures_mask['val'] + real_yt_train + real_actors_train
-  train_list = get_uniform_frames(train_list,70)
-  val_list = get_uniform_frames(val_list,70)
-  train_dataset = FacialForgeryDataset(train_list, transform, transform_mask)
-  val_dataset = FacialForgeryDataset(val_list, transform, transform_mask)
-
-  batch_size = 128
-  shuffle = True
-  train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle,num_workers=4)
-  val_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle,num_workers=4)
-  torch.backends.deterministic = True
-
-  output = '/shared/rc/defake/Deepfake-Slayer/output/train'
-  # output = '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/output/train'
-  if not os.path.exists(output):
-      os.makedirs(output)
-  file = open(f'{output}/train.txt','w')
-  resultdir = '{0}model'.format(MODEL_DIR)
-
-  num_epochs = 20
-  best_val_loss = float('inf')
-  patience = 5
-  counter = 0
-  best_epoch = 0
-  model_dir = '/shared/rc/defake/Deepfake-Slayer/models/FFDmodel/'
-  best_dir = '/shared/rc/defake/Deepfake-Slayer/models/FFDmodel/best'
-  # model_dir = '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/FFDmodel'
-  if not os.path.exists(model_dir):
-      os.makedirs(model_dir)
-  if not os.path.exists(best_dir):
-      os.makedirs(best_dir)
-  writer = SummaryWriter(log_dir='/shared/rc/defake/Deepfake-Slayer/output/logs')
-  for e in range(1,num_epochs+1):
-    MODEL.model.train()
-    for id, batch in enumerate(train_loader):
-      losses, results = calculate_losses(batch)
-      OPTIM.zero_grad()
-      losses['loss'].backward()
-      OPTIM.step()
-      # savemat('{0}_{1}_{2}.mat'.format(resultdir, e, id), results)
-      file.write(f"{id} " + " ".join(["{}: {:.3f}".format(key, losses[key].item()) for key in losses]))
-      file.write("\n")
-      for key, value in losses.items():
-        writer.add_scalar(f"Train/{key}", value.item(), e * len(train_loader) + id)
-
-    MODEL.model.eval()
-    val_loss = 0.0
-    with torch.no_grad():
-      for id, batch in enumerate(val_loader):
-        losses, results = calculate_losses(batch)
-        val_loss += losses['loss']
-        for key, value in losses.items():
-            writer.add_scalar(f"Validation/{key}", value.item(), e * len(val_loader) + id)
-    val_loss /= len(val_loader)
-    writer.add_scalar("Validation/total_loss", val_loss, e)
-
-    if val_loss < best_val_loss:
-      best_val_loss = val_loss
-      counter = 0
-      best_epoch = e
-      MODEL.save(e, OPTIM, best_dir)
-      file.write(f'Saving best model at epoch {e}.')
-      file.write("\n")
-    else:
-      counter += 1
-      if counter >= patience:
-        MODEL.save(e, OPTIM, model_dir)
-        file.write(f'Early stopping at epoch {e}. Best epoch: {best_epoch}')
-        file.write("\n")
-        break
-    if(e%2==0):
-        file.write(f'Saving model for epoch {e}')
-        file.write("\n")
-        MODEL.save(e, OPTIM, model_dir)
-  file.write('Training complete')
-  file.close()
-  writer.close()
+  eval()
+  print('Evaluation complete')
 
 if __name__ == "__main__":
     main()
