@@ -18,7 +18,6 @@ import glob
 from scipy.io import loadmat
 from sklearn import metrics
 from sklearn.metrics import auc
-import pandas as pd
 
 class FacialForgeryDataset(Dataset):
     def __init__(self, mask_list, transform, transform_mask):
@@ -353,6 +352,7 @@ def calculate_losses(batch):
   img = batch['image'].cuda()
   msk = batch['msk'].cuda()
   lab = batch['label'].cuda()
+  skin = batch['skin'].cuda()
   x, mask, vec = MODEL.model(img)
   loss_iou = iou_loss(mask, msk)
   loss_l1 = LOSS_L1(mask, msk)
@@ -360,7 +360,7 @@ def calculate_losses(batch):
   loss = loss_cse + 0.5*loss_l1 + 0.5*loss_iou
   pred = torch.max(x, dim=1)[1]
   acc = (pred == lab).float().mean()
-  res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask }
+  res = { 'lab': lab, 'img': img, 'msk': msk, 'score': x, 'pred': pred, 'mask': mask, 'skin': skin}
   results = {}
   for r in res:
     results[r] = res[r].squeeze().cpu().numpy()
@@ -372,7 +372,7 @@ def compute_result_file(rfn):
     rf = loadmat(rfn)
     # print(rf)
     res = {}
-    for r in ['lab', 'msk', 'score', 'pred', 'mask']:
+    for r in ['lab', 'msk', 'score', 'pred', 'mask','skin']:
       res[r] = rf[r].squeeze()
     return res
 
@@ -422,51 +422,18 @@ def iou_accuracy_fake(predicted_mask, ground_truth_mask, predicted_labels,smooth
     # Return mean IoU (accuracy) across the batch
     return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
 
-def add_skin_color_to_total_results(total_results, csv_file):
-    """
-    Adds a 'skin_color' key to total_results dictionary, mapping skin colors from the CSV file.
-
-    Parameters:
-    - total_results (dict): Dictionary containing image-related data with keys like 'img', 'lab', etc.
-    - csv_file (str): Path to the CSV file containing 'Image_Index' and 'Skin_Color_L'.
-
-    Returns:
-    - Updated total_results with a new 'skin_color' key.
-    """
-    # Load the CSV file
-    data = pd.read_csv(csv_file)
-
-    # Initialize skin_color array with default value ("not detected" for missing data)
-    num_images = len(total_results['lab'])
-    skin_color_array = np.array(["Unknown"] * num_images)
-
-    # Map skin colors to the corresponding indices
-    for _, row in data.iterrows():
-        image_index = row['Image_Index']
-        skin_color = row['Skin_Color_L']
-
-        if 0 <= image_index < num_images:  # Ensure index is valid
-            skin_color_array[image_index] = skin_color
-
-    # Add the skin_color key to total_results
-    total_results['skin_category'] = skin_color_array
-    print(total_results['skin_category'])
-
-    return total_results
-
 def eval():
   # output = "output/eval"
   output = "/shared/rc/defake/Deepfake-Slayer/output/eval"#/shared/rc/defake/Deepfake-Slayer/output/eval"
   if not os.path.exists(output):
         os.makedirs(output)
-  skin_category = ['Light', 'Medium','Dark','Unknown']
-  csv_file = '/shared/rc/defake/Deepfake-Slayer/output/test/output_skin_tone.csv'
+  skin_category = {0: 'Light', 1: 'Medium', 2: 'Dark'}
   # file = open(f'{output}/eval.txt','w')
 
   # Compile the results into a single variable for processing
   # TOTAL_RESULTS = {}
   # '/content/gdrive/MyDrive/shared/rc/defake/FaceForensics++_All/FaceForensics++/models/test/xcp_reg'
-  RESDIR = "/shared/rc/defake/Deepfake-Slayer/models_binary/test/xcp_reg/"#'/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'
+  RESDIR = "/shared/rc/defake/Deepfake-Slayer/models_binary/test_Skin/xcp_reg/"#'/shared/rc/defake/Deepfake-Slayer/models/test/xcp_reg/'
 
   RESFILENAMES = glob.glob(RESDIR + '*.mat')
   TOTAL_RESULTS ={}
@@ -480,20 +447,15 @@ def eval():
       else:
         TOTAL_RESULTS[r] = np.concatenate([TOTAL_RESULTS[r], rf[r]], axis=0)
 
-  TOTAL_RESULTS = add_skin_color_to_total_results(TOTAL_RESULTS, csv_file)
-
-  TOTAL_RESULTS['skin_category'] = np.char.strip(TOTAL_RESULTS['skin_category'])
-
-
   for skin_tone in skin_category:
-    file = open(f'{output}/eval_{skin_tone}.txt','w')
+    file = open(f'{output}/eval_{skin_category[skin_tone]}.txt','w')
 
     filtered_data = {
-    key: np.array([value for idx, value in enumerate(values) if TOTAL_RESULTS['skin_category'][idx] == skin_tone])
+    key: np.array([value for idx, value in enumerate(values) if TOTAL_RESULTS['skin'][idx] == skin_tone])
     for key, values in TOTAL_RESULTS.items()
     }
 
-    filtered_data['skin_category'] = np.array([category for category in TOTAL_RESULTS['skin_category'] if category == skin_tone])
+    filtered_data['skin'] = np.array([category for category in TOTAL_RESULTS['skin'] if category == skin_tone])
 
     # print(filtered_data)
 
@@ -531,7 +493,6 @@ def eval():
       for t in TPR_AT_FPR_THRESHOLDS:
         file.write('  {0:.10f} TPR at {1:.10f} FPR\n'.format(TPR_AT_FPR_THRESHOLDS[t], t))
 
-
     else:
       PRED_ACC = 0
       MASK_ACC = 0
@@ -555,12 +516,11 @@ def eval():
     plt.xlim([0.5,1])
     plt.ylim([0, 1])
     plt.grid()
-    plt.savefig(output+f'/AUC_{skin_tone}.png')
-    print(f'AUC_{skin_tone}.png saved')
+    plt.savefig(output+f'/AUC_{skin_category[skin_tone]}.png')
+    print(f"Evaluation on {skin_category[skin_tone]} done")
 
 def main():
   eval()
-  print("Evaluation on different skin tones Complete")
 
 if __name__ == "__main__":
     main()

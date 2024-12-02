@@ -1,6 +1,6 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=DiiferentSkinToneEvaluation		# Name for your job
+#SBATCH --job-name=DifferentSkinToneEvaluation		# Name for your job
 #SBATCH --comment="Evaluation of the model on different skin tones"		# Comment for your job
 
 #SBATCH --account=defake		# Project account to run your job under
