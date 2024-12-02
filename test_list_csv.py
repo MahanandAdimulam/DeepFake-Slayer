@@ -179,8 +179,9 @@ def main():
 
   test_list = FaceSwap_mask['test'] + Face2Face_mask['test'] + FaceShifter_mask['test'] + fake_NeuralTextures_mask['test'] + real_yt_test + real_actors_test
   output_csv = '/shared/rc/defake/Deepfake-Slayer/output/test/test_list_color_values.csv'
-
+  print("Processing from test list start")
   process_images_from_test_list(test_list, output_csv, start_index=0)
+  print("Processing from test list ended")
 
 if __name__ == "__main__":
     main()
