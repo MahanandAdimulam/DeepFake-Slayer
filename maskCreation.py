@@ -104,34 +104,34 @@ def create_fakeImage_mask_pair(fake_image_dict, real_image_dict, name):
   return mask_dict, not_found
 
 def main():
-  # fake_FaceSwap = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/FaceSwap')
-  # fake_Face2Face = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/Face2Face')
-  # fake_FaceShifter = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/FaceShifter')
-  # fake_NeuralTextures = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/NeuralTextures')
-  # real_dict = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/real/youtube')
+  fake_FaceSwap = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/FaceSwap')
+  fake_Face2Face = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/Face2Face')
+  fake_FaceShifter = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/FaceShifter')
+  fake_NeuralTextures = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/fake/NeuralTextures')
+  real_dict = create_maskpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/real/youtube')
   real_yt_test = create_realpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/real/youtube/test')
   real_actors_test = create_realpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/misc/actors/test')
 
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_dict.pkl', 'wb') as pickle_file:
-  #   pickle.dump(real_dict, pickle_file)
-  # real_yt_train = create_realpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/real/youtube/train')
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_yt_train.pkl', 'wb') as pickle_file:
-  #   pickle.dump(real_yt_train, pickle_file)
-  # real_actors_train = create_realpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/misc/actors/train')
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_actors_train.pkl', 'wb') as pickle_file:
-  #   pickle.dump(real_actors_train, pickle_file)
-  # FaceSwap_mask, FaceSwap_not_found = create_fakeImage_mask_pair(fake_FaceSwap, real_dict, 'FaceSwap_Not_Found')
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceSwap.pkl', 'wb') as pickle_file:
-  #   pickle.dump(FaceSwap_mask, pickle_file)
-  # Face2Face_mask, Face2face_not_found = create_fakeImage_mask_pair(fake_Face2Face, real_dict, "Face2Face_Not_Found")
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/Face2Face.pkl', 'wb') as pickle_file:
-  #   pickle.dump(Face2Face_mask, pickle_file)
-  # FaceShifter_mask, FaceShifter_not_found = create_fakeImage_mask_pair(fake_FaceShifter, real_dict, "FaceShifter_Not_Found")
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceShifter.pkl', 'wb') as pickle_file:
-  #   pickle.dump(FaceShifter_mask, pickle_file)
-  # fake_NeuralTextures_mask, NeuralTextures_not_found = create_fakeImage_mask_pair(fake_NeuralTextures, real_dict, "NeuralTextures_Not_Found")
-  # with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/fake_NeuralTextures.pkl', 'wb') as pickle_file:
-  #   pickle.dump(fake_NeuralTextures_mask, pickle_file)
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_dict.pkl', 'wb') as pickle_file:
+    pickle.dump(real_dict, pickle_file)
+  real_yt_train = create_realpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/real/youtube/train')
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_yt_train.pkl', 'wb') as pickle_file:
+    pickle.dump(real_yt_train, pickle_file)
+  real_actors_train = create_realpath('/shared/rc/defake/FaceForensics++_All/FaceForensics++/misc/actors/train')
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_actors_train.pkl', 'wb') as pickle_file:
+    pickle.dump(real_actors_train, pickle_file)
+  FaceSwap_mask, FaceSwap_not_found = create_fakeImage_mask_pair(fake_FaceSwap, real_dict, 'FaceSwap_Not_Found')
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceSwap.pkl', 'wb') as pickle_file:
+    pickle.dump(FaceSwap_mask, pickle_file)
+  Face2Face_mask, Face2face_not_found = create_fakeImage_mask_pair(fake_Face2Face, real_dict, "Face2Face_Not_Found")
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/Face2Face.pkl', 'wb') as pickle_file:
+    pickle.dump(Face2Face_mask, pickle_file)
+  FaceShifter_mask, FaceShifter_not_found = create_fakeImage_mask_pair(fake_FaceShifter, real_dict, "FaceShifter_Not_Found")
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/FaceShifter.pkl', 'wb') as pickle_file:
+    pickle.dump(FaceShifter_mask, pickle_file)
+  fake_NeuralTextures_mask, NeuralTextures_not_found = create_fakeImage_mask_pair(fake_NeuralTextures, real_dict, "NeuralTextures_Not_Found")
+  with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/fake_NeuralTextures.pkl', 'wb') as pickle_file:
+    pickle.dump(fake_NeuralTextures_mask, pickle_file)
   with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_yt_test.pkl', 'wb') as pickle_file:
     pickle.dump(real_yt_test, pickle_file)
   with open('/shared/rc/defake/Deepfake-Slayer/pickel_file/real_actors_test.pkl', 'wb') as pickle_file:
