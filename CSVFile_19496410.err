@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+INFO:   File "/shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/test_list_WildDeepfake.py", line 179, in <module>
+Created TensorFlow Lite XNNPACK delegate for CPU.
+    main()
+  File "/shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/test_list_WildDeepfake.py", line 175, in main
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+W0000 00:00:1733268017.772386  303171 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+    process_images_from_test_list(test_list, output_csv, start_index=0)
+  File "/shared/rc/defake/Deepfake-Slayer/scripts/DeepFake-Slayer/test_list_WildDeepfake.py", line 67, in process_images_from_test_list
+    for idx, (image_path, mask_path) in enumerate(test_list, start=start_index):
+ValueError: too many values to unpack (expected 2)
+W0000 00:00:1733268017.803572  303171 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
