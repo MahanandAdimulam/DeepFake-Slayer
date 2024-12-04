@@ -4,7 +4,8 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 
 # Load CSV file
-csv_file = '/shared/rc/defake/Deepfake-Slayer/output/test/test_list_color_values.csv'
+# csv_file = '/shared/rc/defake/Deepfake-Slayer/output/test/test_list_color_values.csv'
+csv_file = '/shared/rc/defake/Deepfake-Slayer/output/test/test_list_color_values_WildDeepfake.csv'
 data = pd.read_csv(csv_file)
 
 # Select features
@@ -39,10 +40,10 @@ plt.xlabel('Standardized Avg_Lab_L')
 plt.ylabel('Frequency')
 plt.legend()
 plt.grid()
-plt.savefig('/shared/rc/defake/Deepfake-Slayer/output/test/KMeans_Clusters.png')
+plt.savefig('/shared/rc/defake/Deepfake-Slayer/output/test/KMeans_WildDeepfake_Clusters.png')
 
 # Save the clustered data
-csv_file = '/shared/rc/defake/Deepfake-Slayer/output/test/test_list_color_values_updated.csv'
+csv_file = '/shared/rc/defake/Deepfake-Slayer/output/test/test_list_color_values_WildDeepfake_updated.csv'
 data.to_csv(csv_file, index=False)
 print("Clustering complete. Clustered data saved to 'clustered_data.csv'")
 
