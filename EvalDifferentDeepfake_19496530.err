@@ -1,0 +1,4 @@
+/shared/rc/defake/Deepfake-Slayer/deepfake/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1137: UndefinedMetricWarning: No negative samples in y_true, false positive value should be meaningless
+  warnings.warn(
+/shared/rc/defake/Deepfake-Slayer/deepfake/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1137: UndefinedMetricWarning: No negative samples in y_true, false positive value should be meaningless
+  warnings.warn(

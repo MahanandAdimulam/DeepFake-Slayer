@@ -469,6 +469,14 @@ def eval():
       MASK_ACC = ((filtered_data['mask'] >= MASK_THRESHOLD) == (filtered_data['msk'] >= MASK_THRESHOLD)).astype(np.float32).mean()
       MASK_ACC_IOU = iou_accuracy(filtered_data['mask'], filtered_data['msk'])
       MASK_ACC_IOU_FAKE = iou_accuracy_fake(filtered_data['mask'], filtered_data['msk'],filtered_data['pred'])
+      # Calculate confusion matrix components
+      TP = np.sum((TOTAL_RESULTS['lab'] == 1) & (TOTAL_RESULTS['pred'] == 1))  # True Positives
+      FP = np.sum((TOTAL_RESULTS['lab'] == 0) & (TOTAL_RESULTS['pred'] == 1))  # False Positives
+      FN = np.sum((TOTAL_RESULTS['lab'] == 1) & (TOTAL_RESULTS['pred'] == 0))  # False Negatives
+
+      # Calculate Precision and Recall
+      precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+      recall = TP / (TP + FN) if (TP + FN) > 0 else 0
 
       FPR, TPR, THRESH = metrics.roc_curve(filtered_data['lab'], filtered_data['score'][:,1], drop_intermediate=False)
       AUC = auc(FPR, TPR)
@@ -485,6 +493,8 @@ def eval():
       file.write('Mask Accuracy PBCA: {0:.4f}\n'.format(MASK_ACC))
       file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
       file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
+      file.write('Precision: {0:.4f}\n'.format(precision))
+      file.write('Recall: {0:.4f}\n'.format(recall))
       file.write('AUC: {0:.4f}\n'.format(AUC))
       file.write('EER: {0:.4f}\n'.format(EER))
       file.write('Minimum TPR at FPR != 0: {0:.4f}\n'.format(TPR_AT_FPR_NOT_0))
@@ -498,11 +508,15 @@ def eval():
       MASK_ACC = 0
       MASK_ACC_IOU = 0
       MASK_ACC_IOU_FAKE = 0
+      precision = 0
+      recall = 0
 
       file.write('Prediction Accuracy: {0:.4f}\n'.format(PRED_ACC))
       file.write('Mask Accuracy PBCA: {0:.4f}\n'.format(MASK_ACC))
       file.write('Mask Accuracy IOU: {0:.4f}\n'.format(MASK_ACC_IOU))
       file.write('Mask Accuracy IOU FAKE: {0:.4f}\n'.format(MASK_ACC_IOU_FAKE))
+      file.write('Precision: {0:.4f}\n'.format(precision))
+      file.write('Recall: {0:.4f}\n'.format(recall))
       file.write('AUC: {0:.4f}\n'.format(AUC))
       file.write('EER: {0:.4f}\n'.format(EER))
       file.write('Minimum TPR at FPR != 0: {0:.4f}\n'.format(TPR_AT_FPR_NOT_0))
