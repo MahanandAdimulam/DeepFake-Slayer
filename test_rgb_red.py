@@ -21,10 +21,11 @@ from sklearn.metrics import auc
 import pickle
 
 class FacialForgeryDataset(Dataset):
-    def __init__(self, mask_list, transform, transform_mask):
+    def __init__(self, mask_list, transform, transform_mask, num):
         self.transform = transform
         self.mask_list = mask_list
         self.transform_mask = transform_mask
+        self.num = num
 
     def __len__(self):
         return len(self.mask_list)
@@ -35,7 +36,7 @@ class FacialForgeryDataset(Dataset):
         image = Image.open(image)
         image_array = np.array(image)
         if len(image_array.shape) == 3:  # Check if the image has color channels (RGB)
-            image_array[:, :, 0] = np.clip(image_array[:, :, 0] * 1.6, 0, 255)
+            image_array[:, :, 0] = np.clip(image_array[:, :, 0] * self.num, 0, 255)
         image = Image.fromarray(image_array.astype('uint8'))
         image = self.transform(image)
         if type(mask)==str:
@@ -442,31 +443,37 @@ def main():
     real_actors_test = pickle.load(file)
 
   test_list = FaceSwap_mask['test'] + Face2Face_mask['test'] + FaceShifter_mask['test'] + fake_NeuralTextures_mask['test'] + real_yt_test + real_actors_test
-  test_dataset = FacialForgeryDataset(test_list, transform, transform_mask)
-  batch_size = 128
-  shuffle = True
-  test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=4)
+  rgb_variations = [1.2, 1.4, 1.6, 1.8]
+  for num in rgb_variations:
+    model_dir = f'/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_red_{num}/xcp_reg/'
+    if not os.path.exists(model_dir):
+      os.makedirs(model_dir)
 
-  torch.backends.deterministic = True
-  random.seed(SEED)
-  torch.manual_seed(SEED)
+    test_dataset = FacialForgeryDataset(test_list, transform, transform_mask, num)
+    batch_size = 128
+    shuffle = True
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=4)
 
-#   output = '/content/gdrive/MyDrive/shared/rc/defake/WildDeepfakes/output/test'
-  output = '/shared/rc/defake/Deepfake-Slayer/output/test'
-  if not os.path.exists(output):
-        os.makedirs(output)
-  file = open(f'{output}/test_rgb_red.txt','w')
-  resultdir = '{0}results'.format(MODEL_DIR)
-  for id,batch in enumerate(test_loader):
-    MODEL.model.eval()
-    with torch.no_grad():
-      losses, results = calculate_losses(batch)
-    savemat('{0}_{1}.mat'.format(resultdir, id), results)
-    file.write(f"{id} " + " ".join(["{}: {:.3f}".format(key, losses[key].item()) for key in losses]))
-    file.write("\n")
-  file.write('Testing complete')
-  print('Testing complete')
-  file.close()
+    torch.backends.deterministic = True
+    random.seed(SEED)
+    torch.manual_seed(SEED)
+
+  #   output = '/content/gdrive/MyDrive/shared/rc/defake/WildDeepfakes/output/test'
+    output = '/shared/rc/defake/Deepfake-Slayer/output/test'
+    if not os.path.exists(output):
+          os.makedirs(output)
+    file = open(f'{output}/test_rgb_red_{num}.txt','w')
+    resultdir = '{0}results'.format(model_dir)
+    for id,batch in enumerate(test_loader):
+      MODEL.model.eval()
+      with torch.no_grad():
+        losses, results = calculate_losses(batch)
+      savemat('{0}_{1}.mat'.format(resultdir, id), results)
+      file.write(f"{id} " + " ".join(["{}: {:.3f}".format(key, losses[key].item()) for key in losses]))
+      file.write("\n")
+    file.write('Testing complete')
+    print(f'Testing complete for rgb red {num}')
+    file.close()
 
 if __name__ == "__main__":
     main()
