@@ -1,9 +1,0 @@
-Loading model from /shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/000018.tar
-Model loaded from /shared/rc/defake/Deepfake-Slayer/models_binary/FFDmodel/best/000018.tar
-/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_red/xcp_reg/
-dict_keys(['lab', 'msk', 'score', 'pred', 'mask'])
-/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_green/xcp_reg/
-dict_keys(['lab', 'msk', 'score', 'pred', 'mask'])
-/shared/rc/defake/Deepfake-Slayer/models_binary/test_rgb_blue/xcp_reg/
-dict_keys(['lab', 'msk', 'score', 'pred', 'mask'])
- Forced RGB Values Evaluation complete
