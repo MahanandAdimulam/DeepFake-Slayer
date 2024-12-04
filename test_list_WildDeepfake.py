@@ -64,7 +64,7 @@ def process_images_from_test_list(test_list, output_csv, start_index=0):
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     if start_index == 0:
       writer.writeheader()  # Write the header once
-    for idx, (image_path, mask_path) in enumerate(test_list, start=start_index):
+    for idx, (image_path) in enumerate(test_list, start=start_index):
       print(f"Processing image {idx}: {image_path}")
       try:
         # Read the image from the file path
