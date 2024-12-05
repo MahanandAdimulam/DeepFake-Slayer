@@ -424,7 +424,7 @@ def iou_accuracy_fake(predicted_mask, ground_truth_mask, predicted_labels,smooth
     return iou[predicted_labels == 1].mean() if np.any(predicted_labels == 1) else 0.0
 
 def eval():
-    for color in ['red', 'green', 'blue']:
+    for color in ['red_1.2', 'green_1.2']:
         # output = "output/eval"
         output = "/shared/rc/defake/Deepfake-Slayer/output/eval"
         if not os.path.exists(output):
